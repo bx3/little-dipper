@@ -86,8 +86,6 @@ impl Re for Mailbox {
         //
         // If we were building an EVM blockchain, for example, we'd
         // send the block to other peers here.
-        //
-        // BX could be a good place to broadcast data
     }
 }
 

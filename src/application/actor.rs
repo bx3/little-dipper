@@ -5,14 +5,10 @@ use super::{
     supervisor::Supervisor,
     Config,
 };
-use bytes::BufMut;
-use commonware_consensus::simplex::Prover;
+use commonware_consensus::threshold_simplex::Prover;
 use commonware_cryptography::{
     bls12381::primitives::{group::Element, poly},
     Hasher,
-    Scheme,
-    Bls12381,
-
 };
 use commonware_runtime::{Sink, Stream};
 use commonware_stream::{public_key::Connection, Receiver, Sender};
@@ -28,8 +24,9 @@ const GENESIS: &[u8] = b"commonware is neat";
 /// Application actor.
 pub struct Application<R: Rng, H: Hasher, Si: Sink, St: Stream> {
     runtime: R,
-    chatter_sender: mpsc::Receiver<Message>,
-    prover: Prover<Bls12381, H>,
+    indexer: Connection<Si, St>,
+    prover: Prover<H>,
+    public: Vec<u8>,
     hasher: H,
     mailbox: mpsc::Receiver<Message>,
 }
@@ -41,19 +38,20 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
         (
             Self {
                 runtime,
-                chatter_sender: config.chatter,
+                indexer: config.indexer,
                 prover: config.prover,
+                public: poly::public(&config.identity).serialize(),
                 hasher: config.hasher,
                 mailbox,
             },
-            Supervisor::new(config.identity, config.participants),
+            Supervisor::new(config.identity, config.participants, config.share),
             Mailbox::new(sender),
         )
     }
 
     /// Run the application actor.
     pub async fn run(mut self) {
-        let (mut chatter_sender, mut chatter_receiver) = self.chatter.split();
+        let (mut indexer_sender, mut indexer_receiver) = self.indexer.split();
         while let Some(message) = self.mailbox.next().await {
             match message {
                 Message::Genesis { response } => {
@@ -64,93 +62,47 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                     let _ = response.send(digest);
                 }
                 Message::Propose { index, response } => {
-                    // Either propose a random message (prefix=0) or include some message from
-                    // chatter (prefix=1)
-                    // Fetch chat from the chatter server
-                    let msg = wire::GetMiniBlocks {
-                        view: index,
-                    };
-                    let msg = wire::Inbound {
-                        payload: Some(wire::inbound::Payload::GetMiniBlocks(msg)),
-                    }
-                    .encode_to_vec();
-                    chatter_sender
-                        .send(&msg)
-                        .await
-                        .expect("failed to send GetChat to chatter");
-                    let result = chatter_receiver
-                        .receive()
-                        .await
-                        .expect("failed to receive from indexer");
-                    let msg =
-                        wire::Outbound::decode(result).expect("failed to decode result");
-                    let payload = msg.payload.expect("missing payload");
-                    let mut mini_blocks = match payload {
-                        wire::outbound::Payload::Insufficient(_) => {
-                            debug!("insufficient mini blocks");
-                            continue;
-                        },
-                        wire::outbound::Payload::MiniBlocks(f) => f,
-                        _ => panic!("unexpected response"),
-                    };
+                    // Generate a random message
+                    // bytes has to be power of 2, because consensus assume it has hash
+                    let mut msg: Vec<u8> = vec![0; 32];
+                    self.runtime.fill(&mut msg[1..]);
+                    msg[1..9].copy_from_slice(&index.to_be_bytes());
 
-                    // If nothing from chatter server, then generate a random message
-                    // TODO generate random bytes for mini blocks
-                    self.runtime.fill(&mut mini_blocks[..]);
-                    
-                    // Use chat as message
-                    let mut msg = Vec::with_capacity(1 + mini_blocks.len());
-                    msg.put_u8(1);
-                    msg.extend(mini_blocks);
-
-                    debug!(view = index, "mini blocks included");
-
-                    // Send digest to consensus once we confirm indexer has underlying data
                     let _ = response.send(msg.into());
                 }
                 Message::Verify { payload, response } => {
                     // Ensure payload is a valid digest
-                    if !H::validate(&payload) {
-                        let _ = response.send(false);
-                        continue;
+                    if payload[0] == 0 {
+                        let _ = response.send(payload.len() == 32);
+                    } else {
+                        info!("other data {:?}", payload);
                     }
-
-                    // TODO validate if sufficient mini-blocks are signed and included
-                    let result = true;
-
-                    // If payload exists and is valid, return
-                    let _ = response.send(result);
-
-                    // TODO async notify chatter to prepare and send the next mini-block to next leader
                 }
                 Message::Prepared { proof, payload } => {
-                    //let (view, _, _, signature, seed) =
-                    //    self.prover.deserialize_notarization(proof).unwrap();
-                    //let signature = signature.serialize();
-                    //let seed = seed.serialize();
+                    let (view, _, _, signature, seed) =
+                        self.prover.deserialize_notarization(proof).unwrap();
+                    let signature = signature.serialize();
+                    let seed = seed.serialize();
                     info!(
+                        view,
                         payload = hex(&payload),
+                        signature = hex(&signature),
+                        seed = hex(&seed),
                         "prepared"
                     )
-
-                    // TODO async notify chatter preivous block is WIP
-                    // send blocks for rendering
                 }
                 Message::Finalized { proof, payload } => {
-                    //let (view, _, _, signature, seed) =
-                    //    self.prover.deserialize_finalization(proof.clone()).unwrap();
-                    //let signature = signature.serialize();
-                    //let seed = seed.serialize();
-                    //info!(
-                    //    view,
-                    //    payload = hex(&payload),
-                    //    signature = hex(&signature),
-                    //    seed = hex(&seed),
-                    //    "finalized"
-                    //);
-
-                    // TODO async notify chatter to update chats are finalized
-                    // debug!(view, "finalization posted");
+                    let (view, _, _, signature, seed) =
+                        self.prover.deserialize_finalization(proof.clone()).unwrap();
+                    let signature = signature.serialize();
+                    let seed = seed.serialize();
+                    info!(
+                        view,
+                        payload = hex(&payload),
+                        signature = hex(&signature),
+                        seed = hex(&seed),
+                        "finalized"
+                    );
                 }
             }
         }

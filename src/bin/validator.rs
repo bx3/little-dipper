@@ -1,14 +1,14 @@
 use clap::{value_parser, Arg, Command};
-use bigdipper::{
-    application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, P2P_SUFFIX,
+use little_dipper::{
+    application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, INDEXER_NAMESPACE, P2P_SUFFIX,
 };
-use commonware_consensus::simplex::{self, Engine, Prover};
+use commonware_consensus::threshold_simplex::{self, Engine, Prover};
 use commonware_cryptography::{
     bls12381::primitives::{
-        group::{self, Element},
+        group,
         poly::{self, Poly},
     },
-    Ed25519, Scheme, Sha256, Bls1231,
+    Ed25519, Scheme, Sha256,
 };
 use commonware_p2p::authenticated;
 use commonware_runtime::{
@@ -48,7 +48,9 @@ fn main() {
                 .help("All participants"),
         )
         .arg(Arg::new("storage-dir").long("storage-dir").required(true))
+        .arg(Arg::new("indexer").long("indexer").required(true))
         .arg(Arg::new("identity").long("identity").required(true))
+        .arg(Arg::new("share").long("share").required(true))
         .get_matches();
 
     // Create logger
@@ -109,6 +111,7 @@ fn main() {
         .expect("Please provide storage directory");
 
     // Configure threshold
+    let threshold = quorum(validators.len() as u32).expect("Threshold not well-formed");
     let identity = matches
         .get_one::<String>("identity")
         .expect("Please provide identity");
@@ -116,6 +119,22 @@ fn main() {
     let identity: Poly<group::Public> =
         Poly::deserialize(&identity, threshold).expect("Identity not well-formed");
     let public = poly::public(&identity);
+    let share = matches
+        .get_one::<String>("share")
+        .expect("Please provide share");
+    let share = from_hex(share).expect("Share not well-formed");
+    let share = group::Share::deserialize(&share).expect("Share not well-formed");
+
+    // Configure indexer
+    let indexer = matches
+        .get_one::<String>("indexer")
+        .expect("Please provide indexer");
+    let parts = indexer.split('@').collect::<Vec<&str>>();
+    let indexer_key = parts[0]
+        .parse::<u64>()
+        .expect("Indexer key not well-formed");
+    let indexer = Ed25519::from_seed(indexer_key).public_key();
+    let indexer_address = SocketAddr::from_str(parts[1]).expect("Indexer address not well-formed");
 
     // Initialize runtime
     let runtime_cfg = tokio::Config {
@@ -146,6 +165,16 @@ fn main() {
 
     // Start runtime
     executor.start(async move {
+        // Dial indexer
+        let (sink, stream) = runtime
+            .dial(indexer_address)
+            .await
+            .expect("Failed to dial indexer");
+        let indexer =
+            Connection::upgrade_dialer(runtime.clone(), indexer_cfg, sink, stream, indexer)
+                .await
+                .expect("Failed to upgrade connection with indexer");
+
         // Setup p2p
         let (mut network, mut oracle) = authenticated::Network::new(runtime.clone(), p2p_cfg);
 
@@ -186,16 +215,17 @@ fn main() {
         // Initialize application
         let consensus_namespace = union(APPLICATION_NAMESPACE, CONSENSUS_SUFFIX);
         let hasher = Sha256::default();
-        let prover: Prover<Bls1231, Sha256> = Prover::new(&consensus_namespace);
+        let prover: Prover<Sha256> = Prover::new(public, &consensus_namespace);
         let (application, supervisor, mailbox) = application::Application::new(
             runtime.clone(),
             application::Config {
-                chatter,
+                indexer,
                 prover,
                 hasher: hasher.clone(),
                 mailbox_size: 1024,
                 identity,
                 participants: validators.clone(),
+                share,
             },
         );
 
@@ -203,7 +233,7 @@ fn main() {
         let engine = Engine::new(
             runtime.clone(),
             journal,
-            simplex::Config {
+            threshold_simplex::Config {
                 crypto: signer.clone(),
                 hasher,
                 automaton: mailbox.clone(),
