@@ -67,3 +67,8 @@ name = "validator"
 path = "src/bin/validator.rs"
 bench = false
 
+[[bin]]
+name = "indexer"
+path = "src/bin/indexer.rs"
+bench = false
+

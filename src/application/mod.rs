@@ -14,6 +14,7 @@ use commonware_runtime::{Sink, Stream};
 use commonware_stream::public_key::Connection;
 mod ingress;
 mod supervisor;
+pub mod chatter;
 
 /// Configuration for the application.
 pub struct Config<H: Hasher, Si: Sink, St: Stream> {

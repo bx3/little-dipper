@@ -2,6 +2,7 @@ use clap::{value_parser, Arg, Command};
 use little_dipper::{
     application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, INDEXER_NAMESPACE, P2P_SUFFIX,
 };
+use little_dipper::application::chatter::{actor::Actor, ingress::Mailbox};
 use commonware_consensus::threshold_simplex::{self, Engine, Prover};
 use commonware_cryptography::{
     bls12381::primitives::{
@@ -201,6 +202,14 @@ fn main() {
             Some(3),
         );
 
+        // Register chatter channels
+        let (chatter_p2p_sender, chatter_p2p_reciever) = network.register(
+            2,
+            Quota::per_second(NonZeroU32::new(10).unwrap()),
+            256, // 256 messages in flight
+            Some(3),
+        );
+
         // Initialize storage
         let journal = Journal::init(
             runtime.clone(),
@@ -212,6 +221,8 @@ fn main() {
         .await
         .expect("Failed to initialize journal");
 
+        // Initialize chatter
+        let (chatter_actor, chatter_mailbox) = Actor::new();
         // Initialize application
         let consensus_namespace = union(APPLICATION_NAMESPACE, CONSENSUS_SUFFIX);
         let hasher = Sha256::default();
@@ -227,6 +238,7 @@ fn main() {
                 participants: validators.clone(),
                 share,
             },
+            chatter_mailbox,
         );
 
         // Initialize consensus
@@ -265,6 +277,8 @@ fn main() {
                 (resolver_sender, resolver_receiver),
             ),
         );
+
+        runtime.spawn("chatter", chatter_actor.run());
 
         // Block on application
         application.run().await;

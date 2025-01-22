@@ -5,6 +5,9 @@ use super::{
     supervisor::Supervisor,
     Config,
 };
+
+use super::chatter::ingress::Mailbox as ChatterMailbox;
+
 use commonware_consensus::threshold_simplex::Prover;
 use commonware_cryptography::{
     bls12381::primitives::{group::Element, poly},
@@ -29,11 +32,12 @@ pub struct Application<R: Rng, H: Hasher, Si: Sink, St: Stream> {
     public: Vec<u8>,
     hasher: H,
     mailbox: mpsc::Receiver<Message>,
+    chatter_mailbox: ChatterMailbox,
 }
 
 impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
     /// Create a new application actor.
-    pub fn new(runtime: R, config: Config<H, Si, St>) -> (Self, Supervisor, Mailbox) {
+    pub fn new(runtime: R, config: Config<H, Si, St>, chatter_mailbox: ChatterMailbox) -> (Self, Supervisor, Mailbox) {
         let (sender, mailbox) = mpsc::channel(config.mailbox_size);
         (
             Self {
@@ -43,6 +47,7 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                 public: poly::public(&config.identity).serialize(),
                 hasher: config.hasher,
                 mailbox,
+                chatter_mailbox: chatter_mailbox,
             },
             Supervisor::new(config.identity, config.participants, config.share),
             Mailbox::new(sender),
@@ -64,11 +69,18 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                 Message::Propose { index, response } => {
                     // Generate a random message
                     // bytes has to be power of 2, because consensus assume it has hash
-                    let mut msg: Vec<u8> = vec![0; 32];
-                    self.runtime.fill(&mut msg[1..]);
-                    msg[1..9].copy_from_slice(&index.to_be_bytes());
+                    //let mut msg: Vec<u8> = vec![0; 32];
+                    //self.runtime.fill(&mut msg[1..]);
+                    //msg[1..9].copy_from_slice(&index.to_be_bytes());
 
-                    let _ = response.send(msg.into());
+                    // TODO use chatter_mailbox to request data
+                    let chatter_response = self.chatter_mailbox.get_mini_blocks(index).await;
+                    let mini_blocks = chatter_response.await.unwrap();
+                    let mini_block = mini_blocks[0].clone();
+
+                    // TODO hack use the first mini-blocks' data to populate
+
+                    let _ = response.send(mini_block.data.into());
                 }
                 Message::Verify { payload, response } => {
                     // Ensure payload is a valid digest
