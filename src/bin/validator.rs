@@ -244,7 +244,7 @@ fn main() {
             chatter_mailbox.clone(),
         );
 
-        let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox);
+        let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox, supervisor.clone());
 
         // Initialize consensus
         let engine = Engine::new(

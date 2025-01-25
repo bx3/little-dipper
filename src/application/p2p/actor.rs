@@ -4,11 +4,24 @@ use super::{
 use super::super::chatter::ingress::Mailbox as ChatterMailbox;
 use futures::{channel::{mpsc, oneshot}, SinkExt,StreamExt};
 
+use crate::application::supervisor::Supervisor;
 use crate::wire;
+use commonware_consensus::{
+    ThresholdSupervisor as TSU,
+};
+
+
+use commonware_utils::hex;
 
 use commonware_p2p::{Receiver, Sender, Recipients};
 use commonware_macros::select;
 use tracing::info;
+
+use commonware_cryptography::{
+    bls12381::primitives::{
+        group::{self, Element},
+    },
+};
 
 
 use prost::Message as _;
@@ -17,6 +30,7 @@ use prost::Message as _;
 pub struct Actor {
     control: mpsc::Receiver<Message>,
     chatter_mailbox: ChatterMailbox,
+    supervisor: Supervisor,
 }
 
 enum P2PMessage {
@@ -27,12 +41,16 @@ enum P2PMessage {
 }
 
 impl Actor {
-    pub fn new(chatter_mailbox: ChatterMailbox) -> (Self, Mailbox) {
+    pub fn new(
+        chatter_mailbox: ChatterMailbox,
+        supervisor: Supervisor,
+    ) -> (Self, Mailbox) {
         let (control_sender, control_receiver) = mpsc::channel(100);
         (
             Self {
                 control: control_receiver,
                 chatter_mailbox: chatter_mailbox,
+                supervisor: supervisor,
             },
             Mailbox::new(control_sender),
         )
@@ -53,7 +71,11 @@ impl Actor {
                             // TODO serialize data into bytes array
                             let msg = mini_block; 
                             // TODO send over p2p only to the current leader
-                            sender.send(Recipients::All, msg.into(), false).await.unwrap();
+                            let filler_seed = group::Signature::one();
+                            let next_leader = self.supervisor.leader(view, filler_seed).unwrap();
+
+                            info!("next leader is {:?}", hex(&next_leader));
+                            sender.send(Recipients::One(next_leader), msg.into(), false).await.unwrap();
                             response.send(true);
                         }
                     }

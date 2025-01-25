@@ -34,6 +34,8 @@ impl Actor {
         // TODO need to periodically purge mini-blocks
         while let Some(msg) = self.control.next().await {
             match msg {
+                // validator sends the msg to the chatter for getting the next
+                // block containing sufficient mini-blocks
                 Message::GetMiniBlocks { view, response } => {
                     let mut data: Vec<u8> = vec![0; 32];
                     let sig : Vec<u8> = vec![0; 32];
@@ -69,10 +71,11 @@ impl Actor {
                     // tell p2p server to send the mini-block for next view
                     // TODO create a mini_block from local cache
                     let mini_block = vec![0u8, 32];
-                    let response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
+                    let p2p_response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
                     // TODO not having the response is probably ok
-                    let sent = response.await.unwrap();
-                    info!("got response from p2p_mailbox for SendMiniBlock over P2P to leader");
+                    let sent = p2p_response.await.unwrap();
+                    info!("sent MiniBlock over P2P to leader {}", sent);
+                    response.send(true);
                 }
                 // used by p2p server to receive mini blocks from peers 
                 Message::LoadMiniBlockFromP2P { pubkey, mini_block, response } => {
@@ -81,7 +84,9 @@ impl Actor {
                     // TODO parse view from mini-block in the future
                     let view = 0 ;//mini_block.view;
                     let mut alreay_has = false;
-                    // if alreayd received notify true for alreayd receivd
+
+                    // TODO cache those mini-blocks to be used in the next proposal
+
                     match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             if let Some(_) = self.mini_blocks_cache[&view].get(&pubkey) {

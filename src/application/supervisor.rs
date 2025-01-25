@@ -70,10 +70,11 @@ impl TSu for Supervisor {
     type Identity = poly::Public;
     type Share = group::Share;
 
-    fn leader(&self, _: Self::Index, seed: Self::Seed) -> Option<PublicKey> {
-        let seed = seed.serialize();
-        let index = modulo(&seed, self.participants.len() as u64);
-        Some(self.participants[index as usize].clone())
+    fn leader(&self, index: Self::Index, _: Self::Seed) -> Option<PublicKey> {
+        // let seed = seed.serialize();
+        //let index = modulo(&index, self.participants.len() as u64);
+        // Fix the leader at index 0
+        Some(self.participants[0 as usize].clone())
     }
 
     fn identity(&self, _: Self::Index) -> Option<&Self::Identity> {
