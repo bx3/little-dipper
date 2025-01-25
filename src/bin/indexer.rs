@@ -24,25 +24,6 @@ use std::{
 };
 use tracing::{debug, info};
 
-enum Message {
-    PutBlock {
-        incoming: wire::PutBlock,
-        response: oneshot::Sender<bool>, // wait to broadcast consensus message
-    },
-    GetBlock {
-        incoming: wire::GetBlock,
-        response: oneshot::Sender<Option<Bytes>>,
-    },
-    PutFinalization {
-        incoming: wire::PutFinalization,
-        response: oneshot::Sender<bool>, // wait to delete from validator storage
-    },
-    GetFinalization {
-        incoming: wire::GetFinalization,
-        response: oneshot::Sender<Option<Bytes>>,
-    },
-}
-
 fn main() {
     // Parse arguments
     let matches = Command::new("indexer")

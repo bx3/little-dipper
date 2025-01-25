@@ -4,12 +4,15 @@ use futures:: {
     SinkExt,
 };
 
-#[derive(Clone, Debug, Default)]
-pub struct MiniBlock {
-    pub view: u64,
-    pub data: Bytes,
-    pub sig: Bytes,
-}
+//#[derive(Clone, Debug, Default)]
+//pub struct MiniBlock {
+//    pub view: u64,
+//    pub data: Bytes,
+//    pub sig: Bytes,
+//}
+
+pub type MiniBlock = Vec<u8>;
+
 
 /// Message
 pub enum Message {
@@ -28,7 +31,7 @@ pub enum Message {
         response: oneshot::Sender<bool>,
     },
     // communication with chat server
-    LoadMiniBlock {
+    LoadMiniBlockFromP2P {
         pubkey: Bytes,
         mini_block: MiniBlock,
         response: oneshot::Sender<bool>,
@@ -86,7 +89,7 @@ impl Mailbox {
     pub async fn load_mini_block(&mut self, pubkey: Bytes, mini_block: MiniBlock) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::LoadMiniBlock
+            .send(Message::LoadMiniBlockFromP2P
                 { pubkey, mini_block, response })
             .await
             .expect("Failed to send get mini blocks");

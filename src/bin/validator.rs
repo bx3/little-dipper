@@ -3,6 +3,9 @@ use little_dipper::{
     application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, INDEXER_NAMESPACE, P2P_SUFFIX,
 };
 use little_dipper::application::chatter::{actor::Actor, ingress::Mailbox};
+use little_dipper::application::p2p::actor::Actor as P2PActor;
+use little_dipper::application::p2p::ingress::Mailbox as P2PMailbox;
+
 use commonware_consensus::threshold_simplex::{self, Engine, Prover};
 use commonware_cryptography::{
     bls12381::primitives::{
@@ -238,8 +241,10 @@ fn main() {
                 participants: validators.clone(),
                 share,
             },
-            chatter_mailbox,
+            chatter_mailbox.clone(),
         );
+
+        let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox);
 
         // Initialize consensus
         let engine = Engine::new(
@@ -278,7 +283,9 @@ fn main() {
             ),
         );
 
-        runtime.spawn("chatter", chatter_actor.run());
+        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox));
+
+        runtime.spawn("p2p", p2p_actor.run(chatter_p2p_sender, chatter_p2p_reciever));
 
         // Block on application
         application.run().await;

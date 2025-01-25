@@ -3,36 +3,26 @@ package wire;
 
 message Inbound {
     oneof payload {
-        PutBlock put_block = 1;
-        GetBlock get_block = 2;
-        PutFinalization put_finalization = 3;
-        GetFinalization get_finalization = 4;
+        PutMiniBlock put_mini_block = 1;
     }
 }
 
-message PutBlock {
-    bytes network = 1;
-    bytes data = 2;
+// use by validator to inform the chatter that something is finalized
+message PutMiniBlock {
+    bytes data = 1;
 }
 
-message GetBlock {
-    bytes network = 1;
-    bytes digest = 2;
+message MiniBlock {
+    uint64 view = 1;
+    bytes chats = 2;
+    bytes sig = 3;
 }
 
-message PutFinalization {
-    bytes network = 1;
-    bytes data = 2;
-}
-
-message GetFinalization {
-    bytes network = 1;
-}
+// each mini-blocks contain the peers' signature
 
 message Outbound {
     oneof payload {
-        bool success = 1; // if PUT (success), if GET (success is false if not found)
-        bytes block = 2;
-        bytes finalization = 3;
+        bool success = 1; // insufficient mini blocks
+        bytes mini_blocks = 2;
     }
 }

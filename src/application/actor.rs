@@ -80,15 +80,20 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
 
                     // TODO hack use the first mini-blocks' data to populate
 
-                    let _ = response.send(mini_block.data.into());
+                    let _ = response.send(mini_block.into());
                 }
                 Message::Verify { payload, response } => {
-                    // Ensure payload is a valid digest
-                    if payload[0] == 0 {
-                        let _ = response.send(payload.len() == 32);
-                    } else {
-                        info!("other data {:?}", payload);
+                    let view = 0;
+                    info!("validator sent miniblock while verify the data");
+                    let chatter_response = self.chatter_mailbox.send_mini_block(view).await;
+                    // TODO can probably remove the need to wait for sent
+                    match chatter_response.await {
+                        Ok(_) => info!("chatter response ok"),
+                        Err(e) => info!("errr {:?}", e),
                     }
+
+                    // just accept anything for now
+                    let _ = response.send(payload.len() == 32);
                 }
                 Message::Prepared { proof, payload } => {
                     let (view, _, _, signature, seed) =

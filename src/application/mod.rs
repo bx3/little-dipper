@@ -15,6 +15,7 @@ use commonware_stream::public_key::Connection;
 mod ingress;
 mod supervisor;
 pub mod chatter;
+pub mod p2p;
 
 /// Configuration for the application.
 pub struct Config<H: Hasher, Si: Sink, St: Stream> {
