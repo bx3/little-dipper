@@ -19,9 +19,7 @@ pub mod p2p;
 pub mod mini_block;
 
 /// Configuration for the application.
-pub struct Config<H: Hasher, Si: Sink, St: Stream> {
-    pub indexer: Connection<Si, St>,
-
+pub struct Config<H: Hasher> {
     /// Hashing scheme to use.
     pub hasher: H,
 
