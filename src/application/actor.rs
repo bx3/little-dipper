@@ -25,9 +25,8 @@ use tracing::{debug, info};
 const GENESIS: &[u8] = b"commonware is neat";
 
 /// Application actor.
-pub struct Application<R: Rng, H: Hasher, Si: Sink, St: Stream> {
+pub struct Application<R: Rng, H: Hasher> {
     runtime: R,
-    indexer: Connection<Si, St>,
     prover: Prover<H>,
     public: Vec<u8>,
     hasher: H,
@@ -35,14 +34,13 @@ pub struct Application<R: Rng, H: Hasher, Si: Sink, St: Stream> {
     chatter_mailbox: ChatterMailbox,
 }
 
-impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
+impl<R: Rng, H: Hasher> Application<R, H> {
     /// Create a new application actor.
-    pub fn new(runtime: R, config: Config<H, Si, St>, chatter_mailbox: ChatterMailbox) -> (Self, Supervisor, Mailbox) {
+    pub fn new(runtime: R, config: Config<H>, chatter_mailbox: ChatterMailbox) -> (Self, Supervisor, Mailbox) {
         let (sender, mailbox) = mpsc::channel(config.mailbox_size);
         (
             Self {
                 runtime,
-                indexer: config.indexer,
                 prover: config.prover,
                 public: poly::public(&config.identity).serialize(),
                 hasher: config.hasher,
@@ -56,7 +54,6 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
 
     /// Run the application actor.
     pub async fn run(mut self) {
-        let (mut indexer_sender, mut indexer_receiver) = self.indexer.split();
         while let Some(message) = self.mailbox.next().await {
             match message {
                 Message::Genesis { response } => {
