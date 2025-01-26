@@ -17,6 +17,7 @@ pub enum Message {
         response: oneshot::Sender<Digest>,
     },
     Verify {
+        index: View,
         payload: Digest,
         response: oneshot::Sender<bool>,
     },
@@ -68,12 +69,16 @@ impl Au for Mailbox {
         receiver
     }
 
-    async fn verify(&mut self, _: Context, payload: Digest) -> oneshot::Receiver<bool> {
+    async fn verify(&mut self, context: Context, payload: Digest) -> oneshot::Receiver<bool> {
         // If we linked payloads to their parent, we would verify
         // the parent included in the payload matches the provided `Context`.
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::Verify { payload, response })
+            .send(Message::Verify { 
+                index: context.view,
+                payload,
+                response,
+             })
             .await
             .expect("Failed to send verify");
         receiver

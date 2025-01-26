@@ -83,9 +83,9 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                     let _ = response.send(miniblocks_json.into());
 
                 }
-                Message::Verify { payload, response } => {
+                Message::Verify { index, payload, response } => {
                     // Ensure payload is a valid digest
-                    let view = 0;
+                    let view = index;
                     info!("validator sent miniblock while verify the data");
                     let chatter_response = self.chatter_mailbox.send_mini_block(view).await;
                     // TODO can probably remove the need to wait for sent
