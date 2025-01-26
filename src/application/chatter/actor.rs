@@ -143,6 +143,17 @@ impl Actor {
                     // TODO if chat queue is too large, ask other end to stop
                     response.send(true);
                 }
+                Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
+                    // TODO should verify against the sigs and so on
+                    // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
+                    // that derives some smaller struct for sending over data
+                    let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
+                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
+                        response.send(true);
+                    } else {
+                        response.send(false);
+                    }    
+                }
             }
         }
     }

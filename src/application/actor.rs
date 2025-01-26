@@ -1,4 +1,4 @@
-use crate::wire;
+use crate::{application::mini_block::MiniBlocks, wire};
 
 use super::{
     ingress::{Mailbox, Message},
@@ -15,7 +15,7 @@ use commonware_cryptography::{
 };
 use commonware_runtime::{Sink, Stream};
 use commonware_stream::{public_key::Connection, Receiver, Sender};
-use commonware_utils::hex;
+use commonware_utils::{hex, quorum};
 use futures::{channel::mpsc, StreamExt};
 use prost::Message as _;
 use rand::Rng;
@@ -82,6 +82,10 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                             let mut msg: Vec<u8> = vec![0; 32];
                             self.runtime.fill(&mut msg[1..]);
 
+                            // TODO this is super hacky. The voter.propose from consensus expect an digest.
+                            // Right now it is using Bytes, so we actually can stuff anydata into it.
+                            // But it is very inefficient since, Proposal is included in all notarization and
+                            // finalization. Need a separate channel to send the actual block
                             let _ = response.send(miniblocks_json.into());
                         },
                         Err(e) => info!("insuficient miniblock {:?}", e),
@@ -98,8 +102,23 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                         Err(e) => info!("errr {:?}", e),
                     }
 
+                    // TODO verify if payload contains sufficient mini-blocks
+                    let mini_blocks: MiniBlocks = serde_json::from_slice(&payload).unwrap();
+                    
+                    // TODO check mini_blocks comes from unique particiants and verify against their sigs
+                    let chatter_response = self.chatter_mailbox.check_sufficient_mini_blocks(view, mini_blocks).await;
+                    // TODO can probably remove the need to wait for sent
+                    let result = match chatter_response.await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            info!("verify sufficient mini-blocks errr {:?}", e);
+                            false
+                        },
+                    };
+                    info!("verify sufficient mini-blocks result {:?}", result);
+
                     // TODO always correct for now
-                    let _ = response.send(true);
+                    let _ = response.send(result);
                 }
                 Message::Nullify { index } => {
                     // When there is some gap in the state transition,

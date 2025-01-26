@@ -33,6 +33,11 @@ pub enum Message {
         data: Bytes,
         response: oneshot::Sender<bool>,
     },
+    CheckSufficientMiniBlocks {
+        view: u64,
+        mini_blocks: MiniBlocks,
+        response: oneshot::Sender<bool>,
+    },
 }
 
 
@@ -94,6 +99,15 @@ impl Mailbox {
         self.sender
             .send(Message::LoadChat
                 { data, response })
+            .await
+            .expect("Failed to send get mini blocks");
+        receiver
+    }
+
+    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, mini_blocks: MiniBlocks) -> oneshot::Receiver<bool> {
+        let (response, receiver) = oneshot::channel();
+        self.sender
+            .send(Message::CheckSufficientMiniBlocks { view: view, mini_blocks: mini_blocks, response: response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
