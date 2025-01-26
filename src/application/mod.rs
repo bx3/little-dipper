@@ -16,6 +16,7 @@ mod ingress;
 mod supervisor;
 pub mod chatter;
 pub mod p2p;
+pub mod mini_block;
 
 /// Configuration for the application.
 pub struct Config<H: Hasher, Si: Sink, St: Stream> {

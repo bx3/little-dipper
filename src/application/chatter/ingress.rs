@@ -3,15 +3,8 @@ use futures:: {
     channel::{mpsc, oneshot},
     SinkExt,
 };
-
-//#[derive(Clone, Debug, Default)]
-//pub struct MiniBlock {
-//    pub view: u64,
-//    pub data: Bytes,
-//    pub sig: Bytes,
-//}
-
-pub type MiniBlock = Vec<u8>;
+use crate::application::mini_block::{MiniBlock, MiniBlocks};
+use commonware_cryptography::PublicKey;
 
 
 /// Message
@@ -24,7 +17,7 @@ pub enum Message {
     },
     GetMiniBlocks {
         view: u64,
-        response: oneshot::Sender<Vec<MiniBlock>>,
+        response: oneshot::Sender<MiniBlocks>,
     },
     SendMiniBlock {
         view: u64,
@@ -32,7 +25,7 @@ pub enum Message {
     },
     // communication with chat server
     LoadMiniBlockFromP2P {
-        pubkey: Bytes,
+        pubkey: PublicKey,
         mini_block: MiniBlock,
         response: oneshot::Sender<bool>,
     },
@@ -66,7 +59,7 @@ impl Mailbox {
     }
     
     /// ask chatter to get mini-blocks for proposing
-    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<Vec<MiniBlock>> {
+    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<MiniBlocks> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::GetMiniBlocks { view, response })
@@ -86,7 +79,7 @@ impl Mailbox {
         receiver
     }
 
-    pub async fn load_mini_block(&mut self, pubkey: Bytes, mini_block: MiniBlock) -> oneshot::Receiver<bool> {
+    pub async fn load_mini_block(&mut self, pubkey: PublicKey, mini_block: MiniBlock) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::LoadMiniBlockFromP2P

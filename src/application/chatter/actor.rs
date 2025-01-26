@@ -1,17 +1,18 @@
 use futures::{channel::mpsc, StreamExt};
 use super::{
-    ingress::{Message, Mailbox, MiniBlock},
+    ingress::{Message, Mailbox},
     Config,
 };
 use tracing::info;
 use std::collections::{BTreeMap, VecDeque};
 use bytes::Bytes;
 use crate::application::p2p::ingress::Mailbox as P2PMailbox;
+use crate::application::mini_block::{MiniBlock, MiniBlocks};
 
 pub struct Actor {
     control: mpsc::Receiver<Message>,
     mini_blocks_cache: BTreeMap<u64, BTreeMap<Bytes, MiniBlock>>, // view -> pubkey -> mini-block 
-    chat_queue: VecDeque<Bytes>,
+    chat_queue: VecDeque<Bytes>, // used to create local mini-block for some view
 }
 
 impl Actor {
@@ -37,29 +38,37 @@ impl Actor {
                 // validator sends the msg to the chatter for getting the next
                 // block containing sufficient mini-blocks
                 Message::GetMiniBlocks { view, response } => {
-                    let mut data: Vec<u8> = vec![0; 32];
-                    let sig : Vec<u8> = vec![0; 32];
+                    // TODO should have taken all the mini-blocks to remove mem issue
+                    let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
+                        Some(m) => {
+                            // convert to MiniBlocks
+                            info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
+                            let mut mini_blocks: Vec<MiniBlock> = vec![];
+                            for value in m.values() {
+                                mini_blocks.push(value.clone());
+                            }
+                            MiniBlocks{
+                                mini_blocks: mini_blocks,
+                            }
+                        },
+                        None => {
+                            let mut data: Vec<u8> = vec![0; 32];
+                            let sig : Vec<u8> = vec![0; 32];
+        
+                            data[1..9].copy_from_slice(&view.to_be_bytes());
+                            let mini_block = MiniBlock {
+                                view: view,
+                                data: data.into(),
+                                sig: sig.into(),
+                            };
 
-                    data[1..9].copy_from_slice(&view.to_be_bytes());
-//                    let mini_block = MiniBlock {
-//                        view: view,
-//                        data: data.into(),
-//                        sig: sig.into(),
-//                    };
-                    let mini_block = data.into();
+                            info!("hello GetMiniBlocks no cached mini block at view {:?}", view);
+                            MiniBlocks {
+                                mini_blocks: vec![mini_block],
+                            }
+                        }
+                    };
 
-                    info!("hello GetMiniBlocks");
-                    /*
-                    // if not such local view, return empty
-                    if let None = self.mini_blocks_cache.get(&view) {
-                        response.send((vec![], false));
-                    }
-                    for value in self.mini_blocks_cache[&view].values().take(){
-                        mini_blocks.push(value);
-                    }
-                    */
-                    let mut mini_blocks = Vec::new();
-                    mini_blocks.push(mini_block);
                     response.send(mini_blocks);
                 }
                 Message::PutMiniBlocks { view, mini_blocks, response } => {
@@ -67,10 +76,20 @@ impl Actor {
                 }
                 Message::SendMiniBlock { view, response } => {
                     info!("chatter SendMiniBlock over P2P to leader");
+                    // TODO create a mini_block from local cache
+                    // This is like traffic generator
 
                     // tell p2p server to send the mini-block for next view
-                    // TODO create a mini_block from local cache
-                    let mini_block = vec![0u8, 32];
+                    let mut data = vec![0u8; 32];
+                    data[1..9].copy_from_slice(&view.to_be_bytes());
+                    
+                    // This mini block is for the next view
+                    let mini_block = MiniBlock {
+                        view: view+1,
+                        data: data,
+                        sig:  vec![0u8, 32],
+                    };
+                        
                     let p2p_response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
                     // TODO not having the response is probably ok
                     let sent = p2p_response.await.unwrap();
@@ -78,26 +97,25 @@ impl Actor {
                     response.send(true);
                 }
                 // used by p2p server to receive mini blocks from peers 
-                Message::LoadMiniBlockFromP2P { pubkey, mini_block, response } => {
-                    info!("chatter LoadMiniBlockFromP2P");
+                Message::LoadMiniBlockFromP2P {pubkey, mini_block, response } => {
+                    info!("chatter LoadMiniBlockFromP2P for view {}", mini_block.view);
 
-                    // TODO parse view from mini-block in the future
-                    let view = 0 ;//mini_block.view;
+                    let view = mini_block.view;
                     let mut alreay_has = false;
 
                     // TODO cache those mini-blocks to be used in the next proposal
 
-                    match self.mini_blocks_cache.get(&view) {
+                    match self.mini_blocks_cache.get_mut(&view) {
                         Some(m) => {
-                            if let Some(_) = self.mini_blocks_cache[&view].get(&pubkey) {
+                            if let Some(_) = m.get(&pubkey) {
                                 alreay_has = true;
                             }
                             // update anyway
-                            //self.mini_blocks_cache[&view][&pubkey] = mini_block;
+                            m.insert(pubkey, mini_block);
                         },
                         None => {
-                            //self.mini_blocks_cache[&view] = BTreeMap::new();
-                            //self.mini_blocks_cache[&view][&pubkey] = mini_block;
+                            self.mini_blocks_cache.insert(view, BTreeMap::new());                        
+                            self.mini_blocks_cache.get_mut(&view).unwrap().insert(pubkey, mini_block);
                         },
                     };
 

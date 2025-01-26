@@ -69,20 +69,22 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                 Message::Propose { index, response } => {
                     // Generate a random message
                     // bytes has to be power of 2, because consensus assume it has hash
-                    //let mut msg: Vec<u8> = vec![0; 32];
-                    //self.runtime.fill(&mut msg[1..]);
-                    //msg[1..9].copy_from_slice(&index.to_be_bytes());
 
                     // TODO use chatter_mailbox to request data
                     let chatter_response = self.chatter_mailbox.get_mini_blocks(index).await;
                     let mini_blocks = chatter_response.await.unwrap();
-                    let mini_block = mini_blocks[0].clone();
 
-                    // TODO hack use the first mini-blocks' data to populate
+                    // TODO use more efficient format
+                    let miniblocks_json = serde_json::to_vec(&mini_blocks).unwrap();
 
-                    let _ = response.send(mini_block.into());
+                    let mut msg: Vec<u8> = vec![0; 32];
+                    self.runtime.fill(&mut msg[1..]);
+
+                    let _ = response.send(miniblocks_json.into());
+
                 }
                 Message::Verify { payload, response } => {
+                    // Ensure payload is a valid digest
                     let view = 0;
                     info!("validator sent miniblock while verify the data");
                     let chatter_response = self.chatter_mailbox.send_mini_block(view).await;
@@ -92,10 +94,13 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                         Err(e) => info!("errr {:?}", e),
                     }
 
-                    // just accept anything for now
-                    let _ = response.send(payload.len() == 32);
+                    // TODO always correct for now
+                    let _ = response.send(true);
                 }
                 Message::Prepared { proof, payload } => {
+                    // TODO remove restriction for threshold consensus such that payload has to be size of 32 bytes
+                    // the notarizatio inside the consensus assume verification from the another thresh
+                    /*
                     let (view, _, _, signature, seed) =
                         self.prover.deserialize_notarization(proof).unwrap();
                     let signature = signature.serialize();
@@ -107,8 +112,13 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                         seed = hex(&seed),
                         "prepared"
                     )
+                    */
+                    info!("prepared");
                 }
                 Message::Finalized { proof, payload } => {
+                    // TODO remove unnecessary parts for threshold consensus
+
+                    /*
                     let (view, _, _, signature, seed) =
                         self.prover.deserialize_finalization(proof.clone()).unwrap();
                     let signature = signature.serialize();
@@ -120,6 +130,8 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                         seed = hex(&seed),
                         "finalized"
                     );
+                     */
+                    info!("finalized");
                 }
             }
         }

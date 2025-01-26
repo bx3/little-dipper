@@ -22,7 +22,6 @@ message MiniBlock {
 
 message Outbound {
     oneof payload {
-        bool success = 1; // insufficient mini blocks
-        bytes mini_blocks = 2;
+        bytes mini_block = 1;
     }
 }
