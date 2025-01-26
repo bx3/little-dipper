@@ -1,3 +1,4 @@
+use commonware_consensus::Supervisor;
 use futures::{channel::mpsc, StreamExt};
 use super::{
     ingress::{Message, Mailbox},
@@ -6,8 +7,9 @@ use super::{
 use tracing::info;
 use std::collections::{BTreeMap, VecDeque};
 use bytes::Bytes;
-use crate::application::p2p::ingress::Mailbox as P2PMailbox;
+use crate::application::{p2p::ingress::Mailbox as P2PMailbox, supervisor::Supervisor as SupervisorImpl};
 use crate::application::mini_block::{MiniBlock, MiniBlocks};
+use commonware_utils::quorum;
 
 pub struct Actor {
     control: mpsc::Receiver<Message>,
@@ -31,6 +33,7 @@ impl Actor {
     pub async fn run(
         mut self,
         mut p2p_mailbox: P2PMailbox,
+        supervisor: SupervisorImpl,
     ) {
         // TODO need to periodically purge mini-blocks
         while let Some(msg) = self.control.next().await {
@@ -38,12 +41,25 @@ impl Actor {
                 // validator sends the msg to the chatter for getting the next
                 // block containing sufficient mini-blocks
                 Message::GetMiniBlocks { view, response } => {
+                    // Create a local mini-block, TODO the content should come from data received
+                    // from Message::LoadChat, that should be connected to a tcp server listening
+                    // from users
+                    let mut data: Vec<u8> = vec![0; 32];
+                    let sig : Vec<u8> = vec![0; 32];
+
+                    data[1..9].copy_from_slice(&view.to_be_bytes());
+                    let local_mini_block = MiniBlock {
+                        view: view,
+                        data: data.into(),
+                        sig: sig.into(),
+                    };
+
                     // TODO should have taken all the mini-blocks to remove mem issue
                     let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             // convert to MiniBlocks
                             info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
-                            let mut mini_blocks: Vec<MiniBlock> = vec![];
+                            let mut mini_blocks: Vec<MiniBlock> = vec![local_mini_block];
                             for value in m.values() {
                                 mini_blocks.push(value.clone());
                             }
@@ -52,24 +68,24 @@ impl Actor {
                             }
                         },
                         None => {
-                            let mut data: Vec<u8> = vec![0; 32];
-                            let sig : Vec<u8> = vec![0; 32];
-        
-                            data[1..9].copy_from_slice(&view.to_be_bytes());
-                            let mini_block = MiniBlock {
-                                view: view,
-                                data: data.into(),
-                                sig: sig.into(),
-                            };
+                
 
                             info!("hello GetMiniBlocks no cached mini block at view {:?}", view);
                             MiniBlocks {
-                                mini_blocks: vec![mini_block],
+                                mini_blocks: vec![local_mini_block],
                             }
                         }
                     };
 
-                    response.send(mini_blocks);
+                    // TODO add a timeline to wait for peers about their mini-block for this view
+                    // if they cannot get sufficient number of them
+                    // if view is 1, it is ok, since it is starting
+                    let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
+                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
+                        response.send(mini_blocks);
+                    } else {
+                        info!("insufficint mini block at view {:?}. not respond anything. num miniblock {}, quorum {}", view, mini_blocks.mini_blocks.len(), quorum_participants_at_view);
+                    }                
                 }
                 Message::PutMiniBlocks { view, mini_blocks, response } => {
                     // tell user server that mini-blocks are done

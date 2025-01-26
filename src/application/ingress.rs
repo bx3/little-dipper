@@ -29,6 +29,9 @@ pub enum Message {
         proof: Proof,
         payload: Digest,
     },
+    Nullify {
+        index: View,
+    },
 }
 
 /// Mailbox for the application.
@@ -82,6 +85,13 @@ impl Au for Mailbox {
             .await
             .expect("Failed to send verify");
         receiver
+    }
+
+    async fn nullify(&mut self, view: u64) {
+        self.sender
+            .send(Message::Nullify { index: view })
+            .await
+            .expect("Failed to send finalized");
     }
 }
 

@@ -72,16 +72,20 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
 
                     // TODO use chatter_mailbox to request data
                     let chatter_response = self.chatter_mailbox.get_mini_blocks(index).await;
-                    let mini_blocks = chatter_response.await.unwrap();
+                    
+                    match chatter_response.await {
+                        Ok(mini_blocks) => {
+                            info!("application with sufficient mini blocksx");
+                            // TODO use more efficient format
+                            let miniblocks_json = serde_json::to_vec(&mini_blocks).unwrap();
 
-                    // TODO use more efficient format
-                    let miniblocks_json = serde_json::to_vec(&mini_blocks).unwrap();
+                            let mut msg: Vec<u8> = vec![0; 32];
+                            self.runtime.fill(&mut msg[1..]);
 
-                    let mut msg: Vec<u8> = vec![0; 32];
-                    self.runtime.fill(&mut msg[1..]);
-
-                    let _ = response.send(miniblocks_json.into());
-
+                            let _ = response.send(miniblocks_json.into());
+                        },
+                        Err(e) => info!("insuficient miniblock {:?}", e),
+                    }
                 }
                 Message::Verify { index, payload, response } => {
                     // Ensure payload is a valid digest
@@ -96,6 +100,21 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
 
                     // TODO always correct for now
                     let _ = response.send(true);
+                }
+                Message::Nullify { index } => {
+                    // When there is some gap in the state transition,
+                    // either because GST or a malicious leader
+                    // We let the chatter to send its mini-block to the next leader
+                    // so it is ready to propose when ready
+                    let view = index;
+                    info!("Nullfy took place received by application validator");
+                    // sed the current view, the +1 is performed inside the chatter
+                    let chatter_response = self.chatter_mailbox.send_mini_block(view).await;
+                    // TODO can probably remove the need to wait for sent
+                    match chatter_response.await {
+                        Ok(_) => info!("chatter response ok"),
+                        Err(e) => info!("errr {:?}", e),
+                    }
                 }
                 Message::Prepared { proof, payload } => {
                     // TODO remove restriction for threshold consensus such that payload has to be size of 32 bytes

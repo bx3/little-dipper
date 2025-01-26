@@ -245,6 +245,7 @@ fn main() {
         );
 
         let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox, supervisor.clone());
+        let chatter_supervisor = supervisor.clone();
 
         // Initialize consensus
         let engine = Engine::new(
@@ -283,7 +284,8 @@ fn main() {
             ),
         );
 
-        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox));
+        
+        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox, chatter_supervisor));
 
         runtime.spawn("p2p", p2p_actor.run(chatter_p2p_sender, chatter_p2p_reciever));
 
