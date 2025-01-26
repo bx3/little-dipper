@@ -3,13 +3,9 @@ use futures:: {
     channel::{mpsc, oneshot},
     SinkExt,
 };
+use crate::application::mini_block::{MiniBlock, MiniBlocks};
+use commonware_cryptography::PublicKey;
 
-#[derive(Clone, Debug, Default)]
-pub struct MiniBlock {
-    pub view: u64,
-    pub data: Bytes,
-    pub sig: Bytes,
-}
 
 /// Message
 pub enum Message {
@@ -21,20 +17,25 @@ pub enum Message {
     },
     GetMiniBlocks {
         view: u64,
-        response: oneshot::Sender<(Vec<MiniBlock>, bool)>,
+        response: oneshot::Sender<MiniBlocks>,
     },
     SendMiniBlock {
         view: u64,
         response: oneshot::Sender<bool>,
     },
     // communication with chat server
-    LoadMiniBlock {
-        pubkey: Bytes,
+    LoadMiniBlockFromP2P {
+        pubkey: PublicKey,
         mini_block: MiniBlock,
         response: oneshot::Sender<bool>,
     },
     LoadChat {
         data: Bytes,
+        response: oneshot::Sender<bool>,
+    },
+    CheckSufficientMiniBlocks {
+        view: u64,
+        mini_blocks: MiniBlocks,
         response: oneshot::Sender<bool>,
     },
 }
@@ -53,7 +54,7 @@ impl Mailbox {
 
     /// notify chatter app async to put mini blocks after finalization
     /// return bool, it alreayd received
-    async fn put_mini_blocks(&mut self, view: u64, mini_blocks: Vec<MiniBlock>) -> oneshot::Receiver<bool>{
+    pub async fn put_mini_blocks(&mut self, view: u64, mini_blocks: Vec<MiniBlock>) -> oneshot::Receiver<bool>{
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::PutMiniBlocks { view, mini_blocks, response })
@@ -63,7 +64,7 @@ impl Mailbox {
     }
     
     /// ask chatter to get mini-blocks for proposing
-    async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<Vec<MiniBlock>> {
+    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<MiniBlocks> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::GetMiniBlocks { view, response })
@@ -74,7 +75,7 @@ impl Mailbox {
 
     /// request the chatter to send to the chatter from leader
     /// Return if already sent
-    async fn send_mini_block(&mut self, view: u64) -> oneshot::Receiver<bool> {
+    pub async fn send_mini_block(&mut self, view: u64) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::SendMiniBlock { view, response })
@@ -83,17 +84,17 @@ impl Mailbox {
         receiver
     }
 
-    async fn load_mini_block(&mut self, pubkey: Bytes, mini_block: MiniBlock) -> oneshot::Receiver<bool> {
+    pub async fn load_mini_block(&mut self, pubkey: PublicKey, mini_block: MiniBlock) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::LoadMiniBlock
+            .send(Message::LoadMiniBlockFromP2P
                 { pubkey, mini_block, response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
     }
 
-    async fn load_chat(&mut self, data: Bytes) -> oneshot::Receiver<bool> {
+    pub async fn load_chat(&mut self, data: Bytes) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::LoadChat
@@ -102,6 +103,13 @@ impl Mailbox {
             .expect("Failed to send get mini blocks");
         receiver
     }
+
+    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, mini_blocks: MiniBlocks) -> oneshot::Receiver<bool> {
+        let (response, receiver) = oneshot::channel();
+        self.sender
+            .send(Message::CheckSufficientMiniBlocks { view: view, mini_blocks: mini_blocks, response: response })
+            .await
+            .expect("Failed to send get mini blocks");
+        receiver
+    }
 }
-
-

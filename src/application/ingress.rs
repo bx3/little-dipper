@@ -17,6 +17,7 @@ pub enum Message {
         response: oneshot::Sender<Digest>,
     },
     Verify {
+        index: View,
         payload: Digest,
         response: oneshot::Sender<bool>,
     },
@@ -27,6 +28,9 @@ pub enum Message {
     Finalized {
         proof: Proof,
         payload: Digest,
+    },
+    Nullify {
+        index: View,
     },
 }
 
@@ -68,15 +72,26 @@ impl Au for Mailbox {
         receiver
     }
 
-    async fn verify(&mut self, _: Context, payload: Digest) -> oneshot::Receiver<bool> {
+    async fn verify(&mut self, context: Context, payload: Digest) -> oneshot::Receiver<bool> {
         // If we linked payloads to their parent, we would verify
         // the parent included in the payload matches the provided `Context`.
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::Verify { payload, response })
+            .send(Message::Verify { 
+                index: context.view,
+                payload,
+                response,
+             })
             .await
             .expect("Failed to send verify");
         receiver
+    }
+
+    async fn nullify(&mut self, view: u64) {
+        self.sender
+            .send(Message::Nullify { index: view })
+            .await
+            .expect("Failed to send finalized");
     }
 }
 
@@ -86,8 +101,6 @@ impl Re for Mailbox {
         //
         // If we were building an EVM blockchain, for example, we'd
         // send the block to other peers here.
-        //
-        // BX could be a good place to broadcast data
     }
 }
 

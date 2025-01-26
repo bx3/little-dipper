@@ -3,19 +3,13 @@ package wire;
 
 message Inbound {
     oneof payload {
-        PutMiniBlocks put_mini_blocks = 1;
-        GetMiniBlocks get_mini_blocks = 2;
+        PutMiniBlock put_mini_block = 1;
     }
 }
 
 // use by validator to inform the chatter that something is finalized
-message PutMiniBlocks {
+message PutMiniBlock {
     bytes data = 1;
-}
-
-// use by validator to inform the chatter to collect some chat message to include
-message GetMiniBlocks {
-    uint64 view = 1; // contains a list of mini-blocks including local chatter
 }
 
 message MiniBlock {
@@ -28,7 +22,6 @@ message MiniBlock {
 
 message Outbound {
     oneof payload {
-        bool insufficient = 1; // insufficient mini blocks
-        bytes mini_blocks = 2;
+        bytes mini_block = 1;
     }
 }

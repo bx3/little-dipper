@@ -1252,6 +1252,7 @@ dependencies = [
  "rand",
  "rand_distr",
  "ratatui",
+ "serde",
  "serde_json",
  "sha2 0.10.8",
  "thiserror",
