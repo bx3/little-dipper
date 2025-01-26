@@ -111,7 +111,7 @@ impl<R: Rng, H: Hasher, Si: Sink, St: Stream> Application<R, H, Si, St> {
                     let result = match chatter_response.await {
                         Ok(r) => r,
                         Err(e) => {
-                            info!("verify sufficient mini-blocks errr {:?}", e);
+                            info!("verify insufficient mini-blocks errr {:?}", e);
                             false
                         },
                     };

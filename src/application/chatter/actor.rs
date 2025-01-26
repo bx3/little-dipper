@@ -55,7 +55,7 @@ impl Actor {
                     };
 
                     // TODO should have taken all the mini-blocks to remove mem issue
-                    let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
+                    let mut mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             // convert to MiniBlocks
                             info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
@@ -68,14 +68,15 @@ impl Actor {
                             }
                         },
                         None => {
-                
-
                             info!("hello GetMiniBlocks no cached mini block at view {:?}", view);
                             MiniBlocks {
                                 mini_blocks: vec![local_mini_block],
                             }
                         }
                     };
+
+                    // uncomment to simulate attack
+                    //mini_blocks.mini_blocks.pop();
 
                     // TODO add a timeline to wait for peers about their mini-block for this view
                     // if they cannot get sufficient number of them
@@ -85,7 +86,20 @@ impl Actor {
                         response.send(mini_blocks);
                     } else {
                         info!("insufficint mini block at view {:?}. not respond anything. num miniblock {}, quorum {}", view, mini_blocks.mini_blocks.len(), quorum_participants_at_view);
+                        // uncomment to simulate leader attack
+                        //response.send(mini_blocks);
                     }                
+                }
+                Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
+                    // TODO should verify against the sigs and so on
+                    // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
+                    // that derives some smaller struct for sending over data
+                    let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
+                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
+                        response.send(true);
+                    } else {
+                        response.send(false);
+                    }    
                 }
                 Message::PutMiniBlocks { view, mini_blocks, response } => {
                     // tell user server that mini-blocks are done
@@ -142,17 +156,6 @@ impl Actor {
                     self.chat_queue.push_back(data);
                     // TODO if chat queue is too large, ask other end to stop
                     response.send(true);
-                }
-                Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
-                    // TODO should verify against the sigs and so on
-                    // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
-                    // that derives some smaller struct for sending over data
-                    let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
-                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
-                        response.send(true);
-                    } else {
-                        response.send(false);
-                    }    
                 }
             }
         }
