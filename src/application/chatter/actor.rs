@@ -1,4 +1,4 @@
-use commonware_consensus::Supervisor;
+use commonware_consensus::{Supervisor, ThresholdSupervisor};
 use futures::{channel::mpsc, StreamExt};
 use super::{
     ingress::{Message, Mailbox},
@@ -48,20 +48,26 @@ impl Actor {
                     let sig : Vec<u8> = vec![0; 32];
 
                     data[1..9].copy_from_slice(&view.to_be_bytes());
-                    let local_mini_block = MiniBlock {
+                    let mut local_mini_block = MiniBlock {
                         view: view,
                         data: data.into(),
                         sig: sig.into(),
                     };
 
+                    // sign message
+                    let sig = local_mini_block.sign(supervisor.share(view).unwrap());
+                    local_mini_block.sig = sig;
+
                     // TODO should have taken all the mini-blocks to remove mem issue
-                    let mut mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
+                    let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             // convert to MiniBlocks
                             info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
                             let mut mini_blocks: Vec<MiniBlock> = vec![local_mini_block];
-                            for value in m.values() {
-                                mini_blocks.push(value.clone());
+                            for (pubkey, mini_block) in m.into_iter() {
+                                if mini_block.verify(pubkey) {
+                                    mini_blocks.push(mini_block.clone());
+                                }         
                             }
                             MiniBlocks{
                                 mini_blocks: mini_blocks,
@@ -92,6 +98,17 @@ impl Actor {
                 }
                 Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
                     // TODO should verify against the sigs and so on
+
+                    // TODO check public keys are indeed from participants
+                    for mini_block in mini_blocks.into_iter() {
+                        supervisor.is_participant(view, )
+
+                        if mini_block.verify(pubkey) {
+                            mini_blocks.push(mini_block.clone());
+                        }         
+                    }
+
+
                     // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
                     // that derives some smaller struct for sending over data
                     let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
@@ -114,11 +131,15 @@ impl Actor {
                     data[1..9].copy_from_slice(&view.to_be_bytes());
                     
                     // This mini block is for the next view
-                    let mini_block = MiniBlock {
+                    let mut mini_block = MiniBlock {
                         view: view+1,
                         data: data,
-                        sig:  vec![0u8, 32],
+                        sig:  vec![0u8; 0],
                     };
+
+                    // sign message
+                    let sig = mini_block.sign(supervisor.share(view).unwrap());
+                    mini_block.sig = sig;
                         
                     let p2p_response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
                     // TODO not having the response is probably ok
