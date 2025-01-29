@@ -1,11 +1,12 @@
-use commonware_consensus::Supervisor;
+use commonware_consensus::{Supervisor, ThresholdSupervisor};
+use commonware_cryptography::{bls12381::primitives::group::Element, Ed25519, Scheme};
 use futures::{channel::mpsc, StreamExt};
 use super::{
     ingress::{Message, Mailbox},
     Config,
 };
 use tracing::info;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use bytes::Bytes;
 use crate::application::{p2p::ingress::Mailbox as P2PMailbox, supervisor::Supervisor as SupervisorImpl};
 use crate::application::mini_block::{MiniBlock, MiniBlocks};
@@ -34,6 +35,7 @@ impl Actor {
         mut self,
         mut p2p_mailbox: P2PMailbox,
         supervisor: SupervisorImpl,
+        mut crypto: Ed25519,
     ) {
         // TODO need to periodically purge mini-blocks
         while let Some(msg) = self.control.next().await {
@@ -47,21 +49,31 @@ impl Actor {
                     let mut data: Vec<u8> = vec![0; 32];
                     let sig : Vec<u8> = vec![0; 32];
 
+                    // bls pubkey
+                    let pubkey = crypto.public_key();
+
                     data[1..9].copy_from_slice(&view.to_be_bytes());
-                    let local_mini_block = MiniBlock {
+                    let mut local_mini_block = MiniBlock {
                         view: view,
                         data: data.into(),
+                        pubkey: pubkey.into(),
                         sig: sig.into(),
                     };
 
+                    // sign message
+                    let sig = local_mini_block.sign(&mut crypto);
+                    local_mini_block.sig = sig;
+
                     // TODO should have taken all the mini-blocks to remove mem issue
-                    let mut mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
+                    let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             // convert to MiniBlocks
                             info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
                             let mut mini_blocks: Vec<MiniBlock> = vec![local_mini_block];
-                            for value in m.values() {
-                                mini_blocks.push(value.clone());
+                            for (pubkey, mini_block) in m.into_iter() {
+                                if mini_block.verify() {
+                                    mini_blocks.push(mini_block.clone());
+                                }         
                             }
                             MiniBlocks{
                                 mini_blocks: mini_blocks,
@@ -92,10 +104,32 @@ impl Actor {
                 }
                 Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
                     // TODO should verify against the sigs and so on
+                    // TODO check public keys are indeed from participants
+                    let mut participants = HashSet::new();                        
+
+                    for mini_block in mini_blocks.mini_blocks.into_iter() {                               
+                        // make sure mini block is for curreent view
+                        if mini_block.view != view {
+                            continue
+                        }
+                        // if participant already sent a mini-block skip it
+                        if participants.contains(&mini_block.pubkey) {
+                            continue
+                        }
+
+                        if mini_block.is_participant(view, &supervisor)  {
+                            if mini_block.verify() {                                
+                                participants.insert(mini_block.pubkey);
+                            }
+                        }
+                    }
+
+                    info!("num_valid_mini_block {} at view {}", participants.len(), view);
+
                     // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
                     // that derives some smaller struct for sending over data
                     let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
-                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
+                    if participants.len() >= quorum_participants_at_view || view == 1 {
                         response.send(true);
                     } else {
                         response.send(false);
@@ -112,13 +146,22 @@ impl Actor {
                     // tell p2p server to send the mini-block for next view
                     let mut data = vec![0u8; 32];
                     data[1..9].copy_from_slice(&view.to_be_bytes());
-                    
+
+                    // bls pubkey
+                    let pubkey = crypto.public_key();
+            
                     // This mini block is for the next view
-                    let mini_block = MiniBlock {
+                    let mut mini_block = MiniBlock {
                         view: view+1,
                         data: data,
-                        sig:  vec![0u8, 32],
+                        pubkey: pubkey.into(),
+                        sig:  vec![0u8; 0],
                     };
+
+                    // sign message
+                    let sig = mini_block.sign(&mut crypto);
+
+                    mini_block.sig = sig;
                         
                     let p2p_response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
                     // TODO not having the response is probably ok

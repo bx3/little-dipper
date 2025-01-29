@@ -109,11 +109,9 @@ impl Actor {
 
                     match payload {
                         wire::inbound::Payload::PutMiniBlock(msg) => {
-                            let mini_block = serde_json::from_slice(&msg.data).unwrap();
-                            info!("p2p actor payload {:?}", mini_block);
+                            let mini_block = serde_json::from_slice(&msg.data).unwrap();                            
                             let response = self.chatter_mailbox.load_mini_block(pubkey, mini_block).await;
-                            let _sent = response.await;
-                            info!("p2p server delivered mini block to chatter actor");
+                            let _sent = response.await;                            
                         },
                     }
                 },
