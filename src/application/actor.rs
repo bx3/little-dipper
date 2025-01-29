@@ -1,4 +1,4 @@
-use crate::{application::mini_block::MiniBlocks, wire};
+use crate::{application::mini_block::ProtoBlock, wire};
 
 use super::{
     ingress::{Mailbox, Message},
@@ -74,7 +74,7 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                         Ok(mini_blocks) => {
                             info!("application with sufficient mini blocksx");
                             // TODO use more efficient format
-                            let miniblocks_json = serde_json::to_vec(&mini_blocks).unwrap();
+                            let ProtoBlock_json = serde_json::to_vec(&mini_blocks).unwrap();
 
                             let mut msg: Vec<u8> = vec![0; 32];
                             self.runtime.fill(&mut msg[1..]);
@@ -83,7 +83,7 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                             // Right now it is using Bytes, so we actually can stuff anydata into it.
                             // But it is very inefficient since, Proposal is included in all notarization and
                             // finalization. Need a separate channel to send the actual block
-                            let _ = response.send(miniblocks_json.into());
+                            let _ = response.send(ProtoBlock_json.into());
                         },
                         Err(e) => info!("insuficient miniblock {:?}", e),
                     }
@@ -100,7 +100,7 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                     }
 
                     // TODO verify if payload contains sufficient mini-blocks
-                    let mini_blocks: MiniBlocks = serde_json::from_slice(&payload).unwrap();
+                    let mini_blocks: ProtoBlock = serde_json::from_slice(&payload).unwrap();
                     
                     // TODO check mini_blocks comes from unique particiants and verify against their sigs
                     let chatter_response = self.chatter_mailbox.check_sufficient_mini_blocks(view, mini_blocks).await;

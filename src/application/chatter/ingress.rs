@@ -3,21 +3,21 @@ use futures:: {
     channel::{mpsc, oneshot},
     SinkExt,
 };
-use crate::application::mini_block::{MiniBlock, MiniBlocks};
+use crate::application::mini_block::{MiniBlock, ProtoBlock};
 use commonware_cryptography::PublicKey;
 
 
 /// Message
 pub enum Message {
     // communication with application actor
-    PutMiniBlocks {
+    PutProtoBlock {
         view: u64,
         mini_blocks: Vec<MiniBlock>,
         response: oneshot::Sender<bool>,
     },
-    GetMiniBlocks {
+    GetProtoBlock {
         view: u64,
-        response: oneshot::Sender<MiniBlocks>,
+        response: oneshot::Sender<ProtoBlock>,
     },
     SendMiniBlock {
         view: u64,
@@ -33,9 +33,9 @@ pub enum Message {
         data: Bytes,
         response: oneshot::Sender<bool>,
     },
-    CheckSufficientMiniBlocks {
+    CheckSufficientProtoBlock {
         view: u64,
-        mini_blocks: MiniBlocks,
+        mini_blocks: ProtoBlock,
         response: oneshot::Sender<bool>,
     },
 }
@@ -57,17 +57,17 @@ impl Mailbox {
     pub async fn put_mini_blocks(&mut self, view: u64, mini_blocks: Vec<MiniBlock>) -> oneshot::Receiver<bool>{
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::PutMiniBlocks { view, mini_blocks, response })
+            .send(Message::PutProtoBlock { view, mini_blocks, response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
     }
     
     /// ask chatter to get mini-blocks for proposing
-    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<MiniBlocks> {
+    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<ProtoBlock> {
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::GetMiniBlocks { view, response })
+            .send(Message::GetProtoBlock { view, response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
@@ -104,10 +104,10 @@ impl Mailbox {
         receiver
     }
 
-    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, mini_blocks: MiniBlocks) -> oneshot::Receiver<bool> {
+    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, mini_blocks: ProtoBlock) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::CheckSufficientMiniBlocks { view: view, mini_blocks: mini_blocks, response: response })
+            .send(Message::CheckSufficientProtoBlock { view: view, mini_blocks: mini_blocks, response: response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
