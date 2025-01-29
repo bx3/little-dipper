@@ -9,7 +9,7 @@ use tracing::info;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use bytes::Bytes;
 use crate::application::{p2p::ingress::Mailbox as P2PMailbox, supervisor::Supervisor as SupervisorImpl};
-use crate::application::mini_block::{MiniBlock, MiniBlocks};
+use crate::application::mini_block::{MiniBlock, ProtoBlock};
 use commonware_utils::quorum;
 
 pub struct Actor {
@@ -42,7 +42,7 @@ impl Actor {
             match msg {
                 // validator sends the msg to the chatter for getting the next
                 // block containing sufficient mini-blocks
-                Message::GetMiniBlocks { view, response } => {
+                Message::GetProtoBlock { view, response } => {
                     // Create a local mini-block, TODO the content should come from data received
                     // from Message::LoadChat, that should be connected to a tcp server listening
                     // from users
@@ -65,23 +65,23 @@ impl Actor {
                     local_mini_block.sig = sig;
 
                     // TODO should have taken all the mini-blocks to remove mem issue
-                    let mini_blocks: MiniBlocks = match self.mini_blocks_cache.get(&view) {
+                    let mini_blocks: ProtoBlock = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
-                            // convert to MiniBlocks
-                            info!("hello GetMiniBlocks num of cached mini blocks at view {:?} is {:?}", view, m.len());
+                            // convert to ProtoBlock
+                            info!("hello GetProtoBlock num of cached mini blocks at view {:?} is {:?}", view, m.len());
                             let mut mini_blocks: Vec<MiniBlock> = vec![local_mini_block];
                             for (pubkey, mini_block) in m.into_iter() {
                                 if mini_block.verify() {
                                     mini_blocks.push(mini_block.clone());
                                 }         
                             }
-                            MiniBlocks{
+                            ProtoBlock{
                                 mini_blocks: mini_blocks,
                             }
                         },
                         None => {
-                            info!("hello GetMiniBlocks no cached mini block at view {:?}", view);
-                            MiniBlocks {
+                            info!("hello GetProtoBlock no cached mini block at view {:?}", view);
+                            ProtoBlock {
                                 mini_blocks: vec![local_mini_block],
                             }
                         }
@@ -102,7 +102,7 @@ impl Actor {
                         //response.send(mini_blocks);
                     }                
                 }
-                Message::CheckSufficientMiniBlocks { view, mini_blocks, response } => {
+                Message::CheckSufficientProtoBlock { view, mini_blocks, response } => {
                     // TODO should verify against the sigs and so on
                     // TODO check public keys are indeed from participants
                     let mut participants = HashSet::new();                        
@@ -126,7 +126,7 @@ impl Actor {
 
                     info!("num_valid_mini_block {} at view {}", participants.len(), view);
 
-                    // TODO it is very inefficient to send the entire miniBlocks struct. Should have a proposal struct
+                    // TODO it is very inefficient to send the entire ProtoBlock struct. Should have a proposal struct
                     // that derives some smaller struct for sending over data
                     let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
                     if participants.len() >= quorum_participants_at_view || view == 1 {
@@ -135,7 +135,7 @@ impl Actor {
                         response.send(false);
                     }    
                 }
-                Message::PutMiniBlocks { view, mini_blocks, response } => {
+                Message::PutProtoBlock { view, mini_blocks, response } => {
                     // tell user server that mini-blocks are done
                 }
                 Message::SendMiniBlock { view, response } => {

@@ -24,7 +24,7 @@ pub struct MiniBlock {
 
 /// Data ready to become a proposal
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct MiniBlocks {
+pub struct ProtoBlock {
     pub mini_blocks: Vec<MiniBlock>,
 }
 
