@@ -3,12 +3,11 @@ use commonware_consensus::{
 };
 use commonware_cryptography::{
     bls12381::primitives::{
-        group::{self, Element},
+        group,
         poly::{self, Poly},
     },
     PublicKey,
 };
-use commonware_utils::modulo;
 use std::collections::HashMap;
 
 /// Implementation of `commonware-consensus::Supervisor`.
@@ -70,10 +69,8 @@ impl TSu for Supervisor {
     type Identity = poly::Public;
     type Share = group::Share;
 
-    fn leader(&self, index: Self::Index, _: Self::Seed) -> Option<PublicKey> {
-        // let seed = seed.serialize();
-        //let index = modulo(&index, self.participants.len() as u64);
-        // Fix the leader at index 0
+    fn leader(&self, _: Self::Index, _: Self::Seed) -> Option<PublicKey> {
+        // fixed leader
         Some(self.participants[0 as usize].clone())
     }
 

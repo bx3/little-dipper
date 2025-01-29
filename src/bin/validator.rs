@@ -1,10 +1,9 @@
 use clap::{value_parser, Arg, Command};
 use little_dipper::{
-    application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, INDEXER_NAMESPACE, P2P_SUFFIX,
+    application, APPLICATION_NAMESPACE, CONSENSUS_SUFFIX, P2P_SUFFIX,
 };
-use little_dipper::application::chatter::{actor::Actor, ingress::Mailbox};
+use little_dipper::application::chatter::actor::Actor;
 use little_dipper::application::p2p::actor::Actor as P2PActor;
-use little_dipper::application::p2p::ingress::Mailbox as P2PMailbox;
 
 use commonware_consensus::threshold_simplex::{self, Engine, Prover};
 use commonware_cryptography::{
@@ -20,7 +19,6 @@ use commonware_runtime::{
     Network, Runner, Spawner,
 };
 use commonware_storage::journal::{self, Journal};
-use commonware_stream::public_key::{self, Connection};
 use commonware_utils::{from_hex, hex, quorum, union};
 use governor::Quota;
 use prometheus_client::registry::Registry;

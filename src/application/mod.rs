@@ -10,8 +10,6 @@ use commonware_cryptography::{
 
 mod actor;
 pub use actor::Application;
-use commonware_runtime::{Sink, Stream};
-use commonware_stream::public_key::Connection;
 mod ingress;
 mod supervisor;
 pub mod chatter;
