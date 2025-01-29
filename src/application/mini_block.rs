@@ -1,7 +1,7 @@
 use commonware_cryptography::{Ed25519, Scheme, PublicKey, Signature};
 use commonware_consensus::Supervisor;
-use commonware_stream::public_key;
 use crate::application::supervisor::Supervisor as SupervisorImpl;
+use crate::APPLICATION_P2P_NAMESPACE;
 
 
 /// A single mini block from a chatter
@@ -40,14 +40,14 @@ impl MiniBlock {
 
     pub fn sign(&mut self, crypto: &mut Ed25519) {
         self.sig = crypto.sign(
-            None,
+            Some(APPLICATION_P2P_NAMESPACE),
             &self.non_sig_bytes(),
         ).into();
     }
 
     pub fn verify(&self) -> bool {
         Ed25519::verify(
-            None,
+            Some(APPLICATION_P2P_NAMESPACE),
             &self.non_sig_bytes(), 
             &PublicKey::copy_from_slice(&self.pubkey), 
             &Signature::copy_from_slice(&self.sig),

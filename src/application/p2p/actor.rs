@@ -1,44 +1,21 @@
-use super::{
-    ingress::{Message, Mailbox},
-};
-use super::super::chatter::ingress::Mailbox as ChatterMailbox;
-use futures::{channel::{mpsc, oneshot}, SinkExt,StreamExt};
-
-use crate::{application::supervisor::Supervisor, wire::PutMiniBlock};
-use crate::application::mini_block::MiniBlock;
+use futures::{channel::mpsc ,StreamExt};
+use commonware_consensus::ThresholdSupervisor as TSU;
+use crate::application::supervisor::Supervisor;
+use crate::application::p2p::ingress::{Message, Mailbox};
+use crate::application::chatter::ingress::Mailbox as ChatterMailbox;
 use crate::wire;
-use commonware_consensus::{
-    ThresholdSupervisor as TSU,
-};
-
 
 use commonware_utils::hex;
-
 use commonware_p2p::{Receiver, Sender, Recipients};
 use commonware_macros::select;
-use tracing::info;
-
-use commonware_cryptography::{
-    bls12381::primitives::{
-        group::{self, Element},
-    },
-};
-
-
+use commonware_cryptography::bls12381::primitives::group::{self, Element};
+use tracing::{info, error};
 use prost::Message as _;
-
 
 pub struct Actor {
     control: mpsc::Receiver<Message>,
     chatter_mailbox: ChatterMailbox,
     supervisor: Supervisor,
-}
-
-enum P2PMessage {
-    PutMiniBlock {
-        incoming: wire::PutMiniBlock,
-        response: oneshot::Sender<bool>,
-    },
 }
 
 impl Actor {
@@ -63,22 +40,22 @@ impl Actor {
         mut receiver: impl Receiver,
     ) {
         loop {
+            // select to listen for commands from chatter, or events from p2p network (only leader will receive)
             select! {
                 // receive request from chatter to send mini-block to leader over direct conn
                 chatter_msg = self.control.next() => {
                     match chatter_msg.unwrap() {
                         Message::SendMiniBlockToLeader{view, mini_block, response} => {
                             info!("p2p server will send mini block to leader by broadcast");
-                            // TODO serialize data into bytes array
-                            let msg = mini_block; 
-                            // TODO send over p2p only to the current leader
+                            
                             let filler_seed = group::Signature::one();
                             // + 1 for next view
                             let next_leader = self.supervisor.leader(view+1, filler_seed).unwrap();
 
                             info!("next leader is {:?}", hex(&next_leader));
-                            let mini_block_json = serde_json::to_vec(&msg).unwrap();
+                            let mini_block_json = serde_json::to_vec(&mini_block).unwrap();
 
+                            // to wire
                             let inbound_msg = wire::Inbound {
                                 payload: Some(wire::inbound::Payload::PutMiniBlock(wire::PutMiniBlock{data: mini_block_json.into()})),
                             }
@@ -86,7 +63,7 @@ impl Actor {
 
                             sender.send(Recipients::One(next_leader), inbound_msg.into(), false).await.unwrap();
 
-                            response.send(true);
+                            let _ = response.send(true).map_err(|e| error!("send_mini_bock_to_leader p2p error {}", e));
                         }
                     }
                 },
@@ -102,8 +79,7 @@ impl Actor {
                         Err(_) => continue,
                     };
 
-                    let Some(payload) = msg.payload else {
-                        info!("payload is empty ");
+                    let Some(payload) = msg.payload else {                        
                         continue
                     };
 

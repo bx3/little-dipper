@@ -1,16 +1,18 @@
-use commonware_consensus::{Supervisor, ThresholdSupervisor};
-use commonware_cryptography::{bls12381::primitives::group::Element, Ed25519, Scheme};
+use commonware_consensus::Supervisor;
+use commonware_cryptography::{Ed25519, Scheme};
+use commonware_utils::quorum;
 use futures::{channel::mpsc, StreamExt};
-use super::{
-    ingress::{Message, Mailbox},
-    Config,
-};
+
 use tracing::info;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use bytes::Bytes;
+
 use crate::application::{p2p::ingress::Mailbox as P2PMailbox, supervisor::Supervisor as SupervisorImpl};
 use crate::application::mini_block::{MiniBlock, ProtoBlock};
-use commonware_utils::quorum;
+use crate::application::chatter::ingress::{Message, Mailbox};
+
+
+
 
 pub struct Actor {
     /// for receiving message from other actors who have its mailbox
