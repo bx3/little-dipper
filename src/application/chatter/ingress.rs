@@ -12,7 +12,7 @@ pub enum Message {
     // communication with application actor
     PutProtoBlock {
         view: u64,
-        mini_blocks: Vec<MiniBlock>,
+        proto_block: ProtoBlock,
         response: oneshot::Sender<bool>,
     },
     GetProtoBlock {
@@ -35,7 +35,7 @@ pub enum Message {
     },
     CheckSufficientProtoBlock {
         view: u64,
-        mini_blocks: ProtoBlock,
+        proto_block: ProtoBlock,
         response: oneshot::Sender<bool>,
     },
 }
@@ -54,17 +54,17 @@ impl Mailbox {
 
     /// notify chatter app async to put mini blocks after finalization
     /// return bool, it alreayd received
-    pub async fn put_mini_blocks(&mut self, view: u64, mini_blocks: Vec<MiniBlock>) -> oneshot::Receiver<bool>{
+    pub async fn put_proto_block(&mut self, view: u64, proto_block: ProtoBlock) -> oneshot::Receiver<bool>{
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::PutProtoBlock { view, mini_blocks, response })
+            .send(Message::PutProtoBlock { view, proto_block, response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
     }
     
     /// ask chatter to get mini-blocks for proposing
-    pub async fn get_mini_blocks(&mut self, view: u64) -> oneshot::Receiver<ProtoBlock> {
+    pub async fn get_proto_block(&mut self, view: u64) -> oneshot::Receiver<ProtoBlock> {
         let (response, receiver) = oneshot::channel();
         self.sender
             .send(Message::GetProtoBlock { view, response })
@@ -104,10 +104,10 @@ impl Mailbox {
         receiver
     }
 
-    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, mini_blocks: ProtoBlock) -> oneshot::Receiver<bool> {
+    pub async fn check_sufficient_mini_blocks(&mut self, view: u64, proto_block: ProtoBlock) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
         self.sender
-            .send(Message::CheckSufficientProtoBlock { view: view, mini_blocks: mini_blocks, response: response })
+            .send(Message::CheckSufficientProtoBlock { view: view, proto_block: proto_block, response: response })
             .await
             .expect("Failed to send get mini blocks");
         receiver
