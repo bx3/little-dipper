@@ -253,7 +253,7 @@ fn main() {
         );
 
         
-        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox, chatter_supervisor));
+        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox, chatter_supervisor, signer.clone()));
 
         runtime.spawn("p2p", p2p_actor.run(chatter_p2p_sender, chatter_p2p_reciever));
 
