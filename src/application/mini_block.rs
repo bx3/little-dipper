@@ -1,15 +1,6 @@
-use commonware_cryptography::{Digest, Ed25519, Hasher, Scheme, PublicKey, Signature};
-use commonware_cryptography::{
-    bls12381::primitives::{
-        group::{self, Element},
-        poly::{self, Poly, PartialSignature},
-        ops,
-    },
-    bls12381,
-};
-use bytes::Bytes;
-use commonware_consensus::{Supervisor, ThresholdSupervisor};
-
+use commonware_cryptography::{Ed25519, Scheme, PublicKey, Signature};
+use commonware_consensus::Supervisor;
+use commonware_stream::public_key;
 use crate::application::supervisor::Supervisor as SupervisorImpl;
 
 
@@ -22,13 +13,23 @@ pub struct MiniBlock {
     pub sig: Vec<u8>,
 }
 
-/// Data ready to become a proposal
+/// ProtoBlock is a collections of mini-blocks treated as the content for 
+/// a consensus blok
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProtoBlock {
     pub mini_blocks: Vec<MiniBlock>,
 }
 
 impl MiniBlock {
+    pub fn new(view: u64, data: Vec<u8>, pubkey: Vec<u8>) -> Self {
+        Self {
+            view: view,
+            data: data,
+            pubkey: pubkey,
+            sig: vec![],
+        }
+    }
+
     pub fn non_sig_bytes(&self) -> Vec<u8> {
         let mut v: Vec<u8> = Vec::new();
         v.extend_from_slice(&self.view.to_be_bytes());
@@ -37,26 +38,24 @@ impl MiniBlock {
         v
     }
 
-    pub fn sign(&self, crypto: &mut Ed25519) -> Vec<u8> {
-        let b = self.non_sig_bytes();
-        let sig = crypto.sign(None, &b);
-        sig.into()
+    pub fn sign(&mut self, crypto: &mut Ed25519) {
+        self.sig = crypto.sign(
+            None,
+            &self.non_sig_bytes(),
+        ).into();
     }
 
     pub fn verify(&self) -> bool {
-        let p = PublicKey::copy_from_slice(&self.pubkey);
-        let b = self.non_sig_bytes();
-        let s = Signature::copy_from_slice(&self.sig);
-
-        Ed25519::verify(None, &b, &p, &s)
+        Ed25519::verify(
+            None,
+            &self.non_sig_bytes(), 
+            &PublicKey::copy_from_slice(&self.pubkey), 
+            &Signature::copy_from_slice(&self.sig),
+        )
     }
 
     pub fn is_participant(&self, view: u64, supervisor: &SupervisorImpl) -> bool {
         let pubkey = PublicKey::copy_from_slice(&self.pubkey);
-        
-        if let Some(_) = supervisor.is_participant(view, &pubkey) {
-            return true
-        }
-        return false
+        supervisor.is_participant(view, &pubkey).is_some()
     }
 }

@@ -13,9 +13,12 @@ use crate::application::mini_block::{MiniBlock, ProtoBlock};
 use commonware_utils::quorum;
 
 pub struct Actor {
+    /// for receiving message from other actors who have its mailbox
     control: mpsc::Receiver<Message>,
-    mini_blocks_cache: BTreeMap<u64, BTreeMap<Bytes, MiniBlock>>, // view -> pubkey -> mini-block 
-    chat_queue: VecDeque<Bytes>, // used to create local mini-block for some view
+    /// view -> pubkey -> mini-block
+    mini_blocks_cache: BTreeMap<u64, BTreeMap<Bytes, MiniBlock>>,  
+    /// used to create local mini-block for some view
+    chat_queue: VecDeque<Bytes>,
 }
 
 impl Actor {
@@ -46,31 +49,18 @@ impl Actor {
                     // Create a local mini-block, TODO the content should come from data received
                     // from Message::LoadChat, that should be connected to a tcp server listening
                     // from users
-                    let mut data: Vec<u8> = vec![0; 32];
-                    let sig : Vec<u8> = vec![0; 32];
-
-                    // bls pubkey
-                    let pubkey = crypto.public_key();
-
-                    data[1..9].copy_from_slice(&view.to_be_bytes());
-                    let mut local_mini_block = MiniBlock {
-                        view: view,
-                        data: data.into(),
-                        pubkey: pubkey.into(),
-                        sig: sig.into(),
-                    };
+                    let data = view.to_be_bytes();
+                    let mut local_mini_block = MiniBlock::new(view, data.into(), crypto.public_key().into());
 
                     // sign message
-                    let sig = local_mini_block.sign(&mut crypto);
-                    local_mini_block.sig = sig;
+                    local_mini_block.sign(&mut crypto);
 
                     // TODO should have taken all the mini-blocks to remove mem issue
-                    let mini_blocks: ProtoBlock = match self.mini_blocks_cache.get(&view) {
+                    let proto_block: ProtoBlock = match self.mini_blocks_cache.get(&view) {
                         Some(m) => {
                             // convert to ProtoBlock
-                            info!("hello GetProtoBlock num of cached mini blocks at view {:?} is {:?}", view, m.len());
                             let mut mini_blocks: Vec<MiniBlock> = vec![local_mini_block];
-                            for (pubkey, mini_block) in m.into_iter() {
+                            for (_, mini_block) in m.into_iter() {
                                 if mini_block.verify() {
                                     mini_blocks.push(mini_block.clone());
                                 }         
@@ -87,27 +77,26 @@ impl Actor {
                         }
                     };
 
-                    // uncomment to simulate attack
-                    //mini_blocks.mini_blocks.pop();
+                    // uncomment to simulate attack // mini_blocks.mini_blocks.pop();
 
                     // TODO add a timeline to wait for peers about their mini-block for this view
                     // if they cannot get sufficient number of them
                     // if view is 1, it is ok, since it is starting
                     let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
-                    if mini_blocks.mini_blocks.len() >= quorum_participants_at_view || view==1 {
-                        response.send(mini_blocks);
+                    if proto_block.mini_blocks.len() >= quorum_participants_at_view || view==1 {
+                        response.send(proto_block).unwrap();
                     } else {
-                        info!("insufficint mini block at view {:?}. not respond anything. num miniblock {}, quorum {}", view, mini_blocks.mini_blocks.len(), quorum_participants_at_view);
-                        // uncomment to simulate leader attack
-                        //response.send(mini_blocks);
+                        info!("insufficint mini block at view {:?}. not respond anything. num miniblock {}, quorum {}", view, proto_block.mini_blocks.len(), quorum_participants_at_view);
+                        // uncomment to simulate leader attack //response.send(mini_blocks);
                     }                
                 }
-                Message::CheckSufficientProtoBlock { view, mini_blocks, response } => {
-                    // TODO should verify against the sigs and so on
-                    // TODO check public keys are indeed from participants
+                // Used by consensus Verify to check if sufficient mini-blocks are proposed  
+                // TODO it is very inefficient to send the entire ProtoBlock struct. Should have a proposal struct
+                // that derives some smaller struct for sending over data
+                Message::CheckSufficientProtoBlock { view, proto_block, response } => {                
                     let mut participants = HashSet::new();                        
 
-                    for mini_block in mini_blocks.mini_blocks.into_iter() {                               
+                    for mini_block in proto_block.mini_blocks.into_iter() {                               
                         // make sure mini block is for curreent view
                         if mini_block.view != view {
                             continue
@@ -125,49 +114,39 @@ impl Actor {
                     }
 
                     info!("num_valid_mini_block {} at view {}", participants.len(), view);
-
-                    // TODO it is very inefficient to send the entire ProtoBlock struct. Should have a proposal struct
-                    // that derives some smaller struct for sending over data
                     let quorum_participants_at_view = quorum(supervisor.participants(view).unwrap().len() as u32).unwrap() as usize;
                     if participants.len() >= quorum_participants_at_view || view == 1 {
-                        response.send(true);
+                        response.send(true).unwrap();
                     } else {
-                        response.send(false);
+                        response.send(false).unwrap();
                     }    
                 }
-                Message::PutProtoBlock { view, mini_blocks, response } => {
-                    // tell user server that mini-blocks are done
+                // Used by the chatter to tell api server that mini-blocks are finished
+                Message::PutProtoBlock { view, proto_block, response } => {
+                    unimplemented!()
                 }
+                // Used by all non-leader validator to send mini-block to the leader in the next view. It is triggered by
+                // either Verify request from the consensus logics, or nullify signal from the consensus 
+                // Behave like a traffic generator
                 Message::SendMiniBlock { view, response } => {
                     info!("chatter SendMiniBlock over P2P to leader");
-                    // TODO create a mini_block from local cache
-                    // This is like traffic generator
+                    // TODO Generate mini-blocks from local cache received from the server                    
 
                     // tell p2p server to send the mini-block for next view
-                    let mut data = vec![0u8; 32];
-                    data[1..9].copy_from_slice(&view.to_be_bytes());
-
-                    // bls pubkey
-                    let pubkey = crypto.public_key();
+                    let data = view.to_be_bytes();
             
                     // This mini block is for the next view
-                    let mut mini_block = MiniBlock {
-                        view: view+1,
-                        data: data,
-                        pubkey: pubkey.into(),
-                        sig:  vec![0u8; 0],
-                    };
+                    let mut mini_block = MiniBlock::new(view+1, data.into(), crypto.public_key().into())                    ;
 
                     // sign message
-                    let sig = mini_block.sign(&mut crypto);
-
-                    mini_block.sig = sig;
+                    mini_block.sign(&mut crypto);                
                         
                     let p2p_response = p2p_mailbox.send_mini_block_to_leader(view, mini_block).await;
                     // TODO not having the response is probably ok
-                    let sent = p2p_response.await.unwrap();
-                    info!("sent MiniBlock over P2P to leader {}", sent);
-                    response.send(true);
+                    match p2p_response.await {
+                        Ok(r) => response.send(r).unwrap(),
+                        Err(_) => response.send(false).unwrap(),
+                    }                            
                 }
                 // used by p2p server to receive mini blocks from peers 
                 Message::LoadMiniBlockFromP2P {pubkey, mini_block, response } => {
@@ -198,7 +177,7 @@ impl Actor {
                 Message::LoadChat { data, response } => {
                     self.chat_queue.push_back(data);
                     // TODO if chat queue is too large, ask other end to stop
-                    response.send(true);
+                    response.send(true).unwrap();
                 }
             }
         }

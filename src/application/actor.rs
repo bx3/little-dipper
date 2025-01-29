@@ -1,4 +1,4 @@
-use crate::{application::mini_block::ProtoBlock, wire};
+use crate::application::mini_block::ProtoBlock;
 
 use super::{
     ingress::{Mailbox, Message},
@@ -13,13 +13,11 @@ use commonware_cryptography::{
     bls12381::primitives::{group::Element, poly},
     Hasher,
 };
-use commonware_runtime::{Sink, Stream};
-use commonware_stream::{public_key::Connection, Receiver, Sender};
-use commonware_utils::{hex, quorum};
+
 use futures::{channel::mpsc, StreamExt};
-use prost::Message as _;
+
 use rand::Rng;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Genesis message to use during initialization.
 const GENESIS: &[u8] = b"commonware is neat";
@@ -68,13 +66,13 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                     // bytes has to be power of 2, because consensus assume it has hash
 
                     // TODO use chatter_mailbox to request data
-                    let chatter_response = self.chatter_mailbox.get_mini_blocks(index).await;
+                    let chatter_response = self.chatter_mailbox.get_proto_block(index).await;
                     
                     match chatter_response.await {
-                        Ok(mini_blocks) => {
+                        Ok(proto_block) => {
                             info!("application with sufficient mini blocksx");
                             // TODO use more efficient format
-                            let ProtoBlock_json = serde_json::to_vec(&mini_blocks).unwrap();
+                            let proto_block_json = serde_json::to_vec(&proto_block).unwrap();
 
                             let mut msg: Vec<u8> = vec![0; 32];
                             self.runtime.fill(&mut msg[1..]);
@@ -83,7 +81,7 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                             // Right now it is using Bytes, so we actually can stuff anydata into it.
                             // But it is very inefficient since, Proposal is included in all notarization and
                             // finalization. Need a separate channel to send the actual block
-                            let _ = response.send(ProtoBlock_json.into());
+                            let _ = response.send(proto_block_json.into());
                         },
                         Err(e) => info!("insuficient miniblock {:?}", e),
                     }
@@ -98,12 +96,12 @@ impl<R: Rng, H: Hasher> Application<R, H> {
                         Ok(_) => info!("chatter response ok"),
                         Err(e) => info!("errr {:?}", e),
                     }
-
-                    // TODO verify if payload contains sufficient mini-blocks
-                    let mini_blocks: ProtoBlock = serde_json::from_slice(&payload).unwrap();
+                
+                    let proto_block: ProtoBlock = serde_json::from_slice(&payload).unwrap();
                     
-                    // TODO check mini_blocks comes from unique particiants and verify against their sigs
-                    let chatter_response = self.chatter_mailbox.check_sufficient_mini_blocks(view, mini_blocks).await;
+                    // check mini_blocks comes from unique particiants and verify against their sigs
+                    let chatter_response = self.chatter_mailbox.check_sufficient_mini_blocks(view, proto_block).await;
+
                     // TODO can probably remove the need to wait for sent
                     let result = match chatter_response.await {
                         Ok(r) => r,
