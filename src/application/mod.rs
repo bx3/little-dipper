@@ -14,6 +14,7 @@ mod ingress;
 mod supervisor;
 pub mod chatter;
 pub mod p2p;
+pub mod api_server;
 pub mod mini_block;
 
 /// Configuration for the application.

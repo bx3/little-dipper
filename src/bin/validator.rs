@@ -4,6 +4,7 @@ use little_dipper::{
 };
 use little_dipper::application::chatter::actor::Actor;
 use little_dipper::application::p2p::actor::Actor as P2PActor;
+use little_dipper::application::api_server::actor::Actor as ApiServerActor;
 
 use commonware_consensus::threshold_simplex::{self, Engine, Prover};
 use commonware_cryptography::{
@@ -210,8 +211,10 @@ fn main() {
             chatter_mailbox.clone(),
         );
 
-        let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox, supervisor.clone());
+        let (p2p_actor, p2p_mailbox) = P2PActor::new(chatter_mailbox.clone(), supervisor.clone());
         let chatter_supervisor = supervisor.clone();
+
+        let (api_server_actor, api_server_mailbox) = ApiServerActor::new(chatter_mailbox.clone(), runtime.clone(), key);
 
         // Initialize consensus
         let engine = Engine::new(
@@ -249,9 +252,10 @@ fn main() {
                 (resolver_sender, resolver_receiver),
             ),
         );
-
         
-        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox, chatter_supervisor, signer.clone()));
+        runtime.spawn("api_server", api_server_actor.run());
+        
+        runtime.spawn("chatter", chatter_actor.run(p2p_mailbox, chatter_supervisor, signer.clone(), api_server_mailbox));
 
         runtime.spawn("p2p", p2p_actor.run(chatter_p2p_sender, chatter_p2p_reciever));
 

@@ -13,7 +13,6 @@ pub enum Message {
     PutProtoBlock {
         view: u64,
         proto_block: ProtoBlock,
-        response: oneshot::Sender<bool>,
     },
     GetProtoBlock {
         view: u64,
@@ -30,8 +29,9 @@ pub enum Message {
         response: oneshot::Sender<bool>,
     },
     LoadChat {
+        // at which view should be included
+        view: u64,
         data: Bytes,
-        response: oneshot::Sender<bool>,
     },
     CheckSufficientProtoBlock {
         view: u64,
@@ -53,14 +53,11 @@ impl Mailbox {
     }
 
     /// notify chatter app async to put mini blocks after finalization
-    /// return bool, it alreayd received
-    pub async fn put_proto_block(&mut self, view: u64, proto_block: ProtoBlock) -> oneshot::Receiver<bool>{
-        let (response, receiver) = oneshot::channel();
+    pub async fn put_proto_block(&mut self, view: u64, proto_block: ProtoBlock){
         self.sender
-            .send(Message::PutProtoBlock { view, proto_block, response })
+            .send(Message::PutProtoBlock { view, proto_block})
             .await
             .expect("Failed to send get mini blocks");
-        receiver
     }
     
     /// ask chatter to get mini-blocks for proposing
@@ -94,14 +91,12 @@ impl Mailbox {
         receiver
     }
 
-    pub async fn load_chat(&mut self, data: Bytes) -> oneshot::Receiver<bool> {
-        let (response, receiver) = oneshot::channel();
+    pub async fn load_chat(&mut self, view: u64, data: Bytes){
         self.sender
             .send(Message::LoadChat
-                { data, response })
+                { view, data })
             .await
             .expect("Failed to send get mini blocks");
-        receiver
     }
 
     pub async fn check_sufficient_mini_blocks(&mut self, view: u64, proto_block: ProtoBlock) -> oneshot::Receiver<bool> {

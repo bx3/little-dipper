@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use bytes::Bytes;
 
 use crate::application::{p2p::ingress::Mailbox as P2PMailbox, supervisor::Supervisor as SupervisorImpl};
+use crate::application::api_server::ingress::Mailbox as ApiServerMailbox;
 use crate::application::mini_block::{MiniBlock, ProtoBlock};
 use crate::application::chatter::ingress::{Message, Mailbox};
 
@@ -20,7 +21,7 @@ pub struct Actor {
     /// view -> pubkey -> mini-block
     mini_blocks_cache: BTreeMap<u64, BTreeMap<Bytes, MiniBlock>>,  
     /// used to create local mini-block for some view
-    chat_queue: VecDeque<Bytes>,
+    chat_cache: BTreeMap<u64, Vec<Bytes>>,
 }
 
 impl Actor {
@@ -30,7 +31,7 @@ impl Actor {
             Self {
                 control: control_receiver,
                 mini_blocks_cache: BTreeMap::new(),
-                chat_queue: VecDeque::new(),
+                chat_cache: BTreeMap::new(),
             },
             Mailbox::new(control_sender),
         )
@@ -41,6 +42,7 @@ impl Actor {
         mut p2p_mailbox: P2PMailbox,
         supervisor: SupervisorImpl,
         mut crypto: Ed25519,
+        mut api_server_mailbox: ApiServerMailbox,
     ) {
         // TODO need to periodically purge mini-blocks
         while let Some(msg) = self.control.next().await {
@@ -68,12 +70,14 @@ impl Actor {
                                 }         
                             }
                             ProtoBlock{
+                                view: view,
                                 mini_blocks: mini_blocks,
                             }
                         },
                         None => {
                             info!("hello GetProtoBlock no cached mini block at view {:?}", view);
                             ProtoBlock {
+                                view: view,
                                 mini_blocks: vec![local_mini_block],
                             }
                         }
@@ -124,8 +128,8 @@ impl Actor {
                     }    
                 }
                 // Used by the chatter to tell api server that mini-blocks are finished
-                Message::PutProtoBlock { view, proto_block, response } => {
-                    unimplemented!()
+                Message::PutProtoBlock { view, proto_block } => {
+                    api_server_mailbox.send_proto_block_finalized(proto_block).await
                 }
                 // Used by all non-leader validator to send mini-block to the leader in the next view. It is triggered by
                 // either Verify request from the consensus logics, or nullify signal from the consensus 
@@ -176,10 +180,13 @@ impl Actor {
                     let _ = response.send(alreay_has);
                 }
                 // used by server to receive chat from users
-                Message::LoadChat { data, response } => {
-                    self.chat_queue.push_back(data);
-                    // TODO if chat queue is too large, ask other end to stop
-                    response.send(true).unwrap();
+                Message::LoadChat { view, data } => {
+                    match self.chat_cache.get_mut(&view) {
+                        Some(v) => v.push(data),
+                        None => {
+                            self.chat_cache.insert(view, vec![Bytes::copy_from_slice(&data)]);
+                        }
+                    }                
                 }
             }
         }

@@ -17,6 +17,7 @@ pub struct MiniBlock {
 /// a consensus blok
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProtoBlock {
+    pub view: u64,
     pub mini_blocks: Vec<MiniBlock>,
 }
 
